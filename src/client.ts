@@ -31,11 +31,15 @@ import {
   parseArtifacts,
   parseChatStream,
   parseSourceSummary,
+  parseStudioConfig,
+  parseQuota,
 } from './parser.js';
 import type {
   NotebookSession,
   NotebookRpcSession,
   NotebookInfo,
+  StudioConfig,
+  QuotaInfo,
   SourceInfo,
   ArtifactInfo,
   SourceInput,
@@ -401,6 +405,7 @@ export class NotebookClient {
     const sourceIdArraysTriple = sourceIds.map((id) => [[id]]);
     const sourceIdArraysSingle = sourceIds.map((id) => [id]);
     const language = options?.language ?? 'en';
+    const prompt = options?.customPrompt ?? null;
 
     const raw = await this.callBatchExecute(
       NB_RPC.GENERATE_ARTIFACT,
@@ -408,13 +413,13 @@ export class NotebookClient {
         [...DEFAULT_USER_CONFIG],
         notebookId,
         [
-          options?.customPrompt ?? null,
+          null,
           null,
           type,
           sourceIdArraysTriple,
           null,
           null,
-          [null, [null, 2, null, sourceIdArraysSingle, language, null, 1]],
+          [null, [prompt, 1, null, sourceIdArraysSingle, language, null, 1]],
         ],
       ],
       `/notebook/${notebookId}`,
@@ -437,6 +442,20 @@ export class NotebookClient {
 
   async deleteArtifact(artifactId: string): Promise<void> {
     await this.callBatchExecute(NB_RPC.DELETE_ARTIFACT, [[...DEFAULT_USER_CONFIG], artifactId]);
+  }
+
+  async getStudioConfig(notebookId: string): Promise<StudioConfig> {
+    const raw = await this.callBatchExecute(
+      NB_RPC.GET_STUDIO_CONFIG,
+      [[...DEFAULT_USER_CONFIG], notebookId],
+      `/notebook/${notebookId}`,
+    );
+    return parseStudioConfig(raw);
+  }
+
+  async getQuota(): Promise<QuotaInfo> {
+    const raw = await this.callBatchExecute(NB_RPC.GET_QUOTA, [[...DEFAULT_USER_CONFIG]], '/');
+    return parseQuota(raw);
   }
 
   async downloadAudio(downloadUrl: string, outputDir: string): Promise<string> {

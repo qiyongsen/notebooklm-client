@@ -3,7 +3,7 @@
  */
 
 import { parseEnvelopes } from './boq-parser.js';
-import type { NotebookInfo, SourceInfo, ArtifactInfo } from './types.js';
+import type { NotebookInfo, SourceInfo, ArtifactInfo, StudioConfig, StudioAudioType, StudioDocType, QuotaInfo } from './types.js';
 
 // ── Helpers ──
 
@@ -277,6 +277,64 @@ export function parseChatStream(raw: string): { text: string; threadId: string; 
   }
 
   return { text: lastText, threadId, responseId };
+}
+
+// ── Studio Config Parser ──
+
+export function parseStudioConfig(raw: string): StudioConfig {
+  const inner = extractInner(raw);
+  if (!Array.isArray(inner)) return { audioTypes: [], explainerTypes: [], slideTypes: [], docTypes: [] };
+
+  const sections = Array.isArray(inner[0]) ? inner[0] as unknown[] : inner;
+
+  function parseTypedSection(section: unknown): StudioAudioType[] {
+    if (!Array.isArray(section) || !Array.isArray(section[0])) return [];
+    const items = section[0] as unknown[];
+    return items.filter(Array.isArray).map((item: unknown) => {
+      const arr = item as unknown[];
+      return {
+        id: typeof arr[0] === 'number' ? arr[0] : 0,
+        name: typeof arr[1] === 'string' ? arr[1] : '',
+        description: typeof arr[2] === 'string' ? arr[2] : '',
+      };
+    });
+  }
+
+  function parseDocSection(section: unknown): StudioDocType[] {
+    if (!Array.isArray(section) || !Array.isArray(section[0])) return [];
+    const items = section[0] as unknown[];
+    return items.filter(Array.isArray).map((item: unknown) => {
+      const arr = item as unknown[];
+      return {
+        name: typeof arr[0] === 'string' ? arr[0] : '',
+        description: typeof arr[1] === 'string' ? arr[1] : '',
+      };
+    });
+  }
+
+  return {
+    audioTypes: parseTypedSection(sections[0]),
+    explainerTypes: parseTypedSection(sections[1]),
+    slideTypes: parseTypedSection(sections[2]),
+    docTypes: parseDocSection(sections[3]),
+  };
+}
+
+// ── Quota Parser ──
+
+export function parseQuota(raw: string): QuotaInfo {
+  const inner = extractInner(raw);
+  if (!Array.isArray(inner)) return { audioRemaining: 0, audioLimit: 0, notebookLimit: 0, sourceWordLimit: 0 };
+
+  // Structure: [null, [?, audioLimit, notebookLimit?, sourceWordLimit], ...]
+  const limits = Array.isArray(inner[1]) ? inner[1] as number[] : [];
+
+  return {
+    audioRemaining: typeof limits[0] === 'number' ? limits[0] : 0,
+    audioLimit: typeof limits[1] === 'number' ? limits[1] : 0,
+    notebookLimit: typeof limits[2] === 'number' ? limits[2] : 0,
+    sourceWordLimit: typeof limits[3] === 'number' ? limits[3] : 0,
+  };
 }
 
 // Re-export Boq utilities

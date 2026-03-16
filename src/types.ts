@@ -141,6 +141,33 @@ export interface ArtifactInfo {
   sourceIds?: string[];
 }
 
+// ── Studio Config ──
+
+export interface StudioAudioType {
+  id: number;
+  name: string;
+  description: string;
+}
+
+export interface StudioDocType {
+  name: string;
+  description: string;
+}
+
+export interface StudioConfig {
+  audioTypes: StudioAudioType[];
+  explainerTypes: StudioAudioType[];
+  slideTypes: StudioAudioType[];
+  docTypes: StudioDocType[];
+}
+
+export interface QuotaInfo {
+  audioRemaining: number;
+  audioLimit: number;
+  notebookLimit: number;
+  sourceWordLimit: number;
+}
+
 export interface NotebookChatChunk {
   text: string;
   thinking?: string;
