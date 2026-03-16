@@ -18,23 +18,27 @@ Standalone CLI & library for Google's [NotebookLM](https://notebooklm.google.com
 
 ```bash
 git clone https://github.com/icebear0828/notebooklm-client.git && cd notebooklm-client
-npm install
+npm install    # auto-downloads curl-impersonate for your platform
 npm run build
 ```
 
+`npm install` automatically downloads [curl-impersonate](https://github.com/lexiforest/curl-impersonate) (BoringSSL-based curl with 100% Chrome TLS fingerprint) for macOS/Linux/Windows.
+
 ## Transport Modes
 
-The client supports two transport modes:
+The client uses a 3-tier transport system with automatic fallback. Use `--transport auto` (recommended) to let the client pick the best available:
 
-| | Browser (default) | HTTP |
-|---|---|---|
-| How it works | Launches Chrome, runs `fetch()` inside browser context | Direct Node.js HTTP via undici |
-| TLS fingerprint | Authentic Chrome | Chrome-like (cipher list + sigalgs) |
-| Requires Chrome | Yes (always) | Only for initial login |
-| Speed | Slower (browser overhead) | Faster |
-| Resource usage | ~300MB (Chrome process) | ~20MB |
+| Tier | Transport | TLS Fingerprint | Platforms | Requires |
+|------|-----------|----------------|-----------|----------|
+| 1 | **curl-impersonate** | 100% Chrome (BoringSSL) | macOS, Linux, Windows (DLL) | Auto-installed |
+| 2 | **tls-client** | 99% Chrome (Go uTLS) | All | `npm i tlsclientwrapper` |
+| 3 | **undici** | ~40% (OpenSSL) | All | Built-in |
+| - | **browser** | 100% (real Chrome) | All | Chrome installed |
 
-**Recommended workflow:** Use browser mode once to log in and export a session, then switch to HTTP mode for all subsequent calls.
+**Recommended workflow:**
+1. `npm install` — curl-impersonate auto-installed (tier 1 ready)
+2. `npx notebooklm export-session` — one-time browser login
+3. `npx notebooklm list --transport auto` — uses tier 1, no browser needed
 
 ## Quick Start
 
@@ -45,26 +49,25 @@ npx notebooklm export-session
 # Opens Chrome → log in to Google → session saved to ~/.notebooklm/session.json
 ```
 
-### 2. Use HTTP mode (no browser needed)
+### 2. Use auto mode (recommended, no browser needed)
 
 ```bash
 # List notebooks
-npx notebooklm list --transport http
+npx notebooklm list --transport auto
 
 # Generate audio podcast
-npx notebooklm audio --transport http --url "https://en.wikipedia.org/wiki/TypeScript" -o /tmp/audio -l en
+npx notebooklm audio --transport auto --url "https://en.wikipedia.org/wiki/TypeScript" -o /tmp/audio -l en
 
 # Analyze content
-npx notebooklm analyze --transport http --url "https://example.com/paper.pdf" --question "What are the key findings?"
+npx notebooklm analyze --transport auto --url "https://example.com/paper.pdf" --question "What are the key findings?"
 
 # Chat with existing notebook
-npx notebooklm chat <notebook-id> --transport http --question "Summarize this"
+npx notebooklm chat <notebook-id> --transport auto --question "Summarize this"
 ```
 
 ### 3. Or use browser mode directly (no export needed)
 
 ```bash
-# First run opens Chrome for Google login (cookies persist in ~/.notebooklm/chrome-profile)
 npx notebooklm audio --url "https://en.wikipedia.org/wiki/TypeScript" -o /tmp/audio
 ```
 
@@ -74,10 +77,11 @@ All commands accept these shared options:
 
 ```
 Transport options:
-  --transport <mode>       Transport mode: browser or http (default: browser)
-  --session-path <path>    Session file path for HTTP mode
+  --transport <mode>       auto | browser | curl-impersonate | tls-client | http (default: browser)
+  --session-path <path>    Session file path for non-browser modes
+  --curl-path <path>       Path to curl-impersonate binary (auto-detected)
 
-Browser options (ignored in HTTP mode):
+Browser options (ignored in non-browser modes):
   --profile <dir>          Chrome profile directory (default: ~/.notebooklm/chrome-profile)
   --headless               Run browser in headless mode
   --chrome-path <path>     Chrome executable path
@@ -85,7 +89,7 @@ Browser options (ignored in HTTP mode):
 
 ### `notebooklm export-session`
 
-Launch browser, log in to Google, and export session for HTTP mode.
+Launch browser, log in to Google, and export session for headless modes.
 
 ```bash
 npx notebooklm export-session
@@ -109,23 +113,17 @@ Options:
 ```
 
 ```bash
-npx notebooklm audio --transport http --url "https://example.com/article" -o ./output -l zh
-npx notebooklm audio --transport http --topic "quantum computing" --research-mode deep -o ./output
-npx notebooklm audio --transport http --text "Your content here..." -o ./output
+npx notebooklm audio --transport auto --url "https://example.com/article" -o ./output -l zh
+npx notebooklm audio --transport auto --topic "quantum computing" --research-mode deep -o ./output
+npx notebooklm audio --transport auto --text "Your content here..." -o ./output
 ```
 
 ### `notebooklm analyze`
 
 Analyze source material with a question.
 
-```
-Options:
-  --url/--text/--topic     Source (one required)
-  --question <q>           Question to ask (required)
-```
-
 ```bash
-npx notebooklm analyze --transport http --url "https://example.com" --question "What are the key findings?"
+npx notebooklm analyze --transport auto --url "https://example.com" --question "What are the key findings?"
 ```
 
 ### `notebooklm list`
@@ -133,7 +131,7 @@ npx notebooklm analyze --transport http --url "https://example.com" --question "
 List all notebooks in your account.
 
 ```bash
-npx notebooklm list --transport http
+npx notebooklm list --transport auto
 ```
 
 ### `notebooklm detail <notebook-id>`
@@ -141,34 +139,39 @@ npx notebooklm list --transport http
 Show notebook title and sources.
 
 ```bash
-npx notebooklm detail abc-123 --transport http
+npx notebooklm detail abc-123 --transport auto
 ```
 
 ### `notebooklm chat <notebook-id>`
 
 Chat with an existing notebook.
 
-```
-Options:
-  --question <q>           Question (required)
-  --source-ids <ids>       Comma-separated source IDs (default: all)
-```
-
 ```bash
-npx notebooklm chat abc-123 --transport http --question "Summarize the main points"
-npx notebooklm chat abc-123 --transport http --question "Explain section 3" --source-ids "src-1,src-2"
+npx notebooklm chat abc-123 --transport auto --question "Summarize the main points"
+npx notebooklm chat abc-123 --transport auto --question "Explain section 3" --source-ids "src-1,src-2"
 ```
 
 ## Library API
 
-### HTTP mode (recommended)
+### Auto mode (recommended)
 
 ```typescript
 import { NotebookClient } from 'notebooklm-client';
 
 const client = new NotebookClient();
-await client.connect({ transport: 'http' });
-// Loads session from ~/.notebooklm/session.json automatically
+await client.connect({ transport: 'auto' });
+// Auto-detects best transport: curl-impersonate → tls-client → undici
+// Loads session from ~/.notebooklm/session.json
+
+// Dynamic studio configuration — no hardcoded types
+const config = await client.getStudioConfig(notebookId);
+// config.audioTypes   → [{id:1, name:"Deep Dive"}, {id:2, name:"Brief"}, ...]
+// config.slideTypes   → [{id:1, name:"Detailed Deck"}, ...]
+// config.docTypes     → [{name:"Briefing Doc"}, {name:"Study Guide"}, ...]
+
+// Check quota before generating
+const quota = await client.getQuota();
+// quota.audioRemaining → remaining audio generations
 
 const notebooks = await client.listNotebooks();
 const { notebookId } = await client.createNotebook();
@@ -185,10 +188,8 @@ await client.disconnect();
 const client = new NotebookClient();
 await client.connect({ transport: 'browser', headless: true });
 
-// Same API as HTTP mode, plus:
-// - Auto-saves session on connect
-// - Can export session for later HTTP use
 const sessionPath = await client.exportSession();
+// Session auto-saved on connect too
 
 await client.disconnect();
 ```
@@ -196,29 +197,28 @@ await client.disconnect();
 ### Provide session directly (no file)
 
 ```typescript
-import { NotebookClient } from 'notebooklm-client';
-import type { NotebookRpcSession } from 'notebooklm-client';
-
-const session: NotebookRpcSession = {
-  at: 'csrf-token',
-  bl: 'boq_labs-tailwind-frontend_...',
-  fsid: '...',
-  cookies: 'SID=...; HSID=...; SSID=...',
-  userAgent: 'Mozilla/5.0 ...',
-};
-
 const client = new NotebookClient();
-await client.connect({ transport: 'http', session });
+await client.connect({
+  transport: 'auto',
+  session: {
+    at: 'csrf-token',
+    bl: 'boq_labs-tailwind-frontend_...',
+    fsid: '...',
+    cookies: 'SID=...; HSID=...; SSID=...',
+    userAgent: 'Mozilla/5.0 ...',
+    language: 'en',
+  },
+});
 ```
 
 ### Full API reference
 
 ```typescript
 // ── Lifecycle ──
-await client.connect(options)        // Connect (browser or http)
+await client.connect(options)        // Connect (auto | browser | curl-impersonate | tls-client | http)
 await client.disconnect()            // Clean up
 await client.exportSession(path?)    // Export session to file (browser mode only)
-client.getTransportMode()            // Returns 'browser' | 'http'
+client.getTransportMode()            // Returns actual transport tier used
 client.getSession()                  // Get session info
 client.getRpcSession()               // Get raw RPC session data
 
@@ -239,7 +239,11 @@ await client.deleteSource(sourceId)                   // → void
 await client.sendChat(notebookId, message, sourceIds) // → { text, threadId }
 await client.deleteChatThread(threadId)               // → void
 
-// ── Artifacts (audio, flashcards, etc.) ──
+// ── Studio (dynamic) ──
+await client.getStudioConfig(notebookId)              // → StudioConfig (audio/slide/doc types)
+await client.getQuota()                               // → QuotaInfo (remaining limits)
+
+// ── Artifacts (audio, slides, docs, etc.) ──
 await client.generateArtifact(notebookId, type, sourceIds, options) // → { artifactId, title }
 await client.getArtifacts(notebookId)                 // → ArtifactInfo[]
 await client.downloadAudio(downloadUrl, outputDir)    // → filePath
@@ -261,8 +265,24 @@ await saveSession(session, '/path/to/session.json');
 const session = await loadSession('/path/to/session.json');
 const valid = await hasValidSession('/path/to/session.json', 2 * 60 * 60 * 1000); // 2h max age
 
-// Refresh tokens without browser (uses long-lived cookies to GET new CSRF tokens)
+// Refresh tokens without browser (uses long-lived cookies)
 const refreshed = await refreshTokens(oldSession, '/path/to/session.json');
+```
+
+## Docker
+
+For guaranteed tier 1 fingerprint on any platform:
+
+```bash
+docker build -t notebooklm .
+docker run -v ~/.notebooklm:/root/.notebooklm notebooklm list --transport auto
+```
+
+Or with docker-compose:
+
+```bash
+docker compose run notebooklm list --transport auto
+docker compose run notebooklm audio --transport auto --url "https://example.com" -o /output
 ```
 
 ## How it works
@@ -278,17 +298,21 @@ Each request contains:
 - **Payload** as nested JSON arrays
 - **CSRF token** (`SNlM0e`) extracted from `WIZ_global_data`
 - **Session cookies** (including HttpOnly cookies extracted via CDP)
+- **Language** (`hl`) auto-detected from browser locale
 
-**Browser mode** launches Chrome with anti-detection, runs `fetch()` inside the browser context for authentic TLS fingerprints.
+**Transport tiers** differ only in how the HTTP request reaches Google:
+- **Tier 1 (curl-impersonate)**: BoringSSL → identical Chrome TLS ClientHello + HTTP/2 fingerprint
+- **Tier 2 (tls-client)**: Go uTLS → near-identical JA3/JA4 + HTTP/2 Akamai fingerprint
+- **Tier 3 (undici)**: Node.js OpenSSL → Chrome cipher list, but different extension order
 
-**HTTP mode** sends requests directly from Node.js using undici with Chrome-like TLS configuration (cipher suite order, signature algorithms, ALPN). Session data (cookies + tokens) is exported from a prior browser session. Tokens auto-refresh when expired — no browser needed.
+Studio configuration (available audio types, slide types, doc types) and quota are **fetched dynamically** from the server — no hardcoded artifact types.
 
 Chat uses a separate streaming endpoint (`GenerateFreeFormStreamed`).
 
 ## Testing
 
 ```bash
-# Unit tests (55 tests)
+# Unit tests (65 tests)
 npm test
 
 # E2E tests against real API (18 tests, requires valid session)
@@ -300,8 +324,9 @@ npm run test:e2e
 | File | Purpose |
 |------|---------|
 | `~/.notebooklm/chrome-profile` | Chrome persistent login profile |
-| `~/.notebooklm/session.json` | Exported session for HTTP mode (auto-refreshes tokens) |
+| `~/.notebooklm/session.json` | Exported session (tokens auto-refresh via cookies) |
 | `~/.notebooklm/rpc-ids.json` | RPC ID overrides (when Google updates IDs) |
+| `bin/curl-impersonate` | Auto-installed curl-impersonate binary |
 
 ## License
 
@@ -325,23 +350,27 @@ Google [NotebookLM](https://notebooklm.google.com/) 的独立 CLI 和编程库 �
 
 ```bash
 git clone https://github.com/icebear0828/notebooklm-client.git && cd notebooklm-client
-npm install
+npm install    # 自动下载 curl-impersonate
 npm run build
 ```
 
+`npm install` 会自动下载 [curl-impersonate](https://github.com/lexiforest/curl-impersonate)（基于 BoringSSL 的 curl，100% Chrome TLS 指纹）。
+
 ## 传输模式
 
-支持两种传输模式：
+客户端使用 3 层传输体系，自动 fallback。推荐使用 `--transport auto`：
 
-| | 浏览器模式（默认） | HTTP 模式 |
-|---|---|---|
-| 工作方式 | 启动 Chrome，在浏览器上下文内执行 `fetch()` | Node.js 通过 undici 直接发 HTTP |
-| TLS 指纹 | 原生 Chrome | 模拟 Chrome（cipher 顺序 + sigalgs） |
-| 需要 Chrome | 始终需要 | 仅首次登录 |
-| 速度 | 较慢（浏览器开销） | 快 |
-| 资源占用 | ~300MB（Chrome 进程） | ~20MB |
+| 层级 | 传输方式 | TLS 指纹匹配度 | 平台 | 依赖 |
+|------|---------|---------------|------|------|
+| 1 | **curl-impersonate** | 100%（BoringSSL） | macOS, Linux, Windows (DLL) | 自动安装 |
+| 2 | **tls-client** | 99%（Go uTLS） | 全平台 | `npm i tlsclientwrapper` |
+| 3 | **undici** | ~40%（OpenSSL） | 全平台 | 内置 |
+| - | **browser** | 100%（真实 Chrome） | 全平台 | 需安装 Chrome |
 
-**推荐用法：** 用浏览器模式登录一次并导出 session，之后全部切换到 HTTP 模式。
+**推荐流程：**
+1. `npm install` — curl-impersonate 自动安装（tier 1 就绪）
+2. `npx notebooklm export-session` — 一次性浏览器登录
+3. `npx notebooklm list --transport auto` — 使用 tier 1，无需浏览器
 
 ## 快速开始
 
@@ -352,26 +381,25 @@ npx notebooklm export-session
 # 打开 Chrome → 登录 Google 账号 → session 保存到 ~/.notebooklm/session.json
 ```
 
-### 2. 使用 HTTP 模式（无需浏览器）
+### 2. 使用 auto 模式（推荐，无需浏览器）
 
 ```bash
 # 列出所有笔记本
-npx notebooklm list --transport http
+npx notebooklm list --transport auto
 
 # 生成音频播客
-npx notebooklm audio --transport http --url "https://zh.wikipedia.org/wiki/TypeScript" -o /tmp/audio -l zh
+npx notebooklm audio --transport auto --url "https://zh.wikipedia.org/wiki/TypeScript" -o /tmp/audio -l zh
 
 # 分析内容
-npx notebooklm analyze --transport http --url "https://example.com/paper.pdf" --question "主要发现是什么？"
+npx notebooklm analyze --transport auto --url "https://example.com/paper.pdf" --question "主要发现是什么？"
 
 # 与已有笔记本对话
-npx notebooklm chat <notebook-id> --transport http --question "帮我总结一下"
+npx notebooklm chat <notebook-id> --transport auto --question "帮我总结一下"
 ```
 
 ### 3. 或者直接使用浏览器模式（无需导出）
 
 ```bash
-# 首次运行会打开 Chrome 登录（cookie 持久化到 ~/.notebooklm/chrome-profile）
 npx notebooklm audio --url "https://example.com/article" -o /tmp/audio
 ```
 
@@ -381,10 +409,11 @@ npx notebooklm audio --url "https://example.com/article" -o /tmp/audio
 
 ```
 传输选项：
-  --transport <mode>       传输模式：browser 或 http（默认 browser）
-  --session-path <path>    HTTP 模式的 session 文件路径
+  --transport <mode>       auto | browser | curl-impersonate | tls-client | http（默认 browser）
+  --session-path <path>    非浏览器模式的 session 文件路径
+  --curl-path <path>       curl-impersonate 二进制路径（自动检测）
 
-浏览器选项（HTTP 模式下忽略）：
+浏览器选项（非浏览器模式下忽略）：
   --profile <dir>          Chrome 配置目录（默认 ~/.notebooklm/chrome-profile）
   --headless               无头模式运行浏览器
   --chrome-path <path>     Chrome 可执行文件路径
@@ -392,7 +421,7 @@ npx notebooklm audio --url "https://example.com/article" -o /tmp/audio
 
 ### `notebooklm export-session`
 
-启动浏览器，登录 Google，导出 session 供 HTTP 模式使用。
+启动浏览器，登录 Google，导出 session 供无头模式使用。
 
 ```bash
 npx notebooklm export-session
@@ -416,9 +445,8 @@ npx notebooklm export-session -o /path/to/session.json
 ```
 
 ```bash
-npx notebooklm audio --transport http --url "https://example.com/article" -o ./output -l zh
-npx notebooklm audio --transport http --topic "量子计算" --research-mode deep -o ./output
-npx notebooklm audio --transport http --text "你的内容..." -o ./output
+npx notebooklm audio --transport auto --url "https://example.com/article" -o ./output -l zh
+npx notebooklm audio --transport auto --topic "量子计算" --research-mode deep -o ./output
 ```
 
 ### `notebooklm analyze`
@@ -426,44 +454,38 @@ npx notebooklm audio --transport http --text "你的内容..." -o ./output
 对素材提出问题进行分析。
 
 ```bash
-npx notebooklm analyze --transport http --url "https://example.com" --question "核心观点是什么？"
+npx notebooklm analyze --transport auto --url "https://example.com" --question "核心观点是什么？"
 ```
 
-### `notebooklm list`
-
-列出账号下所有笔记本。
+### `notebooklm list` / `detail` / `chat`
 
 ```bash
-npx notebooklm list --transport http
-```
-
-### `notebooklm detail <notebook-id>`
-
-显示笔记本标题和素材来源。
-
-```bash
-npx notebooklm detail abc-123 --transport http
-```
-
-### `notebooklm chat <notebook-id>`
-
-与已有笔记本对话。
-
-```bash
-npx notebooklm chat abc-123 --transport http --question "总结要点"
-npx notebooklm chat abc-123 --transport http --question "解释第三部分" --source-ids "src-1,src-2"
+npx notebooklm list --transport auto
+npx notebooklm detail abc-123 --transport auto
+npx notebooklm chat abc-123 --transport auto --question "总结要点"
 ```
 
 ## 编程 API
 
-### HTTP 模式（推荐）
+### Auto 模式（推荐）
 
 ```typescript
 import { NotebookClient } from 'notebooklm-client';
 
 const client = new NotebookClient();
-await client.connect({ transport: 'http' });
+await client.connect({ transport: 'auto' });
+// 自动检测最佳传输层：curl-impersonate → tls-client → undici
 // 自动从 ~/.notebooklm/session.json 加载 session
+
+// 动态获取 Studio 配置 —— 不硬编码任何类型
+const config = await client.getStudioConfig(notebookId);
+// config.audioTypes   → [{id:1, name:"Deep Dive"}, {id:2, name:"Brief"}, ...]
+// config.slideTypes   → [{id:1, name:"Detailed Deck"}, ...]
+// config.docTypes     → [{name:"Briefing Doc"}, {name:"Study Guide"}, ...]
+
+// 生成前检查配额
+const quota = await client.getQuota();
+// quota.audioRemaining → 剩余音频生成次数
 
 const notebooks = await client.listNotebooks();
 const { notebookId } = await client.createNotebook();
@@ -474,46 +496,31 @@ const { text } = await client.sendChat(notebookId, '帮我总结', detail.source
 await client.disconnect();
 ```
 
-### 浏览器模式
-
-```typescript
-const client = new NotebookClient();
-await client.connect({ transport: 'browser', headless: true });
-
-// API 与 HTTP 模式相同，额外支持：
-// - 连接时自动保存 session
-// - 可导出 session 供后续 HTTP 模式使用
-const sessionPath = await client.exportSession();
-
-await client.disconnect();
-```
-
 ### 直接传入 session（不读文件）
 
 ```typescript
-import { NotebookClient } from 'notebooklm-client';
-import type { NotebookRpcSession } from 'notebooklm-client';
-
-const session: NotebookRpcSession = {
-  at: 'csrf-token',
-  bl: 'boq_labs-tailwind-frontend_...',
-  fsid: '...',
-  cookies: 'SID=...; HSID=...; SSID=...',
-  userAgent: 'Mozilla/5.0 ...',
-};
-
 const client = new NotebookClient();
-await client.connect({ transport: 'http', session });
+await client.connect({
+  transport: 'auto',
+  session: {
+    at: 'csrf-token',
+    bl: 'boq_labs-tailwind-frontend_...',
+    fsid: '...',
+    cookies: 'SID=...; HSID=...; SSID=...',
+    userAgent: 'Mozilla/5.0 ...',
+    language: 'zh',
+  },
+});
 ```
 
 ### 完整 API 参考
 
 ```typescript
 // ── 生命周期 ──
-await client.connect(options)        // 连接（浏览器或 HTTP）
+await client.connect(options)        // 连接（auto | browser | curl-impersonate | tls-client | http）
 await client.disconnect()            // 断开并清理资源
 await client.exportSession(path?)    // 导出 session 到文件（仅浏览器模式）
-client.getTransportMode()            // 返回 'browser' | 'http'
+client.getTransportMode()            // 返回实际使用的传输层
 client.getSession()                  // 获取 session 信息
 client.getRpcSession()               // 获取原始 RPC session 数据
 
@@ -534,7 +541,11 @@ await client.deleteSource(sourceId)                   // → void
 await client.sendChat(notebookId, message, sourceIds) // → { text, threadId }
 await client.deleteChatThread(threadId)               // → void
 
-// ── 产物（音频、闪卡等） ──
+// ── Studio（动态） ──
+await client.getStudioConfig(notebookId)              // → StudioConfig（音频/幻灯片/文档类型）
+await client.getQuota()                               // → QuotaInfo（剩余配额）
+
+// ── 产物（音频、幻灯片、文档等） ──
 await client.generateArtifact(notebookId, type, sourceIds, options) // → { artifactId, title }
 await client.getArtifacts(notebookId)                 // → ArtifactInfo[]
 await client.downloadAudio(downloadUrl, outputDir)    // → filePath
@@ -560,9 +571,25 @@ const valid = await hasValidSession('/path/to/session.json', 2 * 60 * 60 * 1000)
 const refreshed = await refreshTokens(oldSession, '/path/to/session.json');
 ```
 
+## Docker
+
+全平台保证 tier 1 指纹：
+
+```bash
+docker build -t notebooklm .
+docker run -v ~/.notebooklm:/root/.notebooklm notebooklm list --transport auto
+```
+
+或使用 docker-compose：
+
+```bash
+docker compose run notebooklm list --transport auto
+docker compose run notebooklm audio --transport auto --url "https://example.com" -o /output
+```
+
 ## 工作原理
 
-NotebookLM 使用 Google 的 **Boq** RPC 框架（与 Gemini 相同），所有操作通过以下端点：
+NotebookLM 使用 Google 的 **Boq** RPC 框架（与 Gemini 相同），所有操作通过：
 
 ```
 POST https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute
@@ -573,17 +600,21 @@ POST https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute
 - **Payload**：嵌套 JSON 数组
 - **CSRF token**（`SNlM0e`）：从 `WIZ_global_data` 提取
 - **Session cookies**（包括通过 CDP 提取的 HttpOnly cookie）
+- **语言**（`hl`）：从浏览器 locale 自动检测
 
-**浏览器模式** 启动带反检测的 Chrome，在浏览器上下文中执行 `fetch()` 获得原生 TLS 指纹。
+**传输层级**仅影响 HTTP 请求如何到达 Google：
+- **Tier 1（curl-impersonate）**：BoringSSL → 完全一致的 Chrome TLS ClientHello + HTTP/2 指纹
+- **Tier 2（tls-client）**：Go uTLS → 近乎一致的 JA3/JA4 + HTTP/2 Akamai 指纹
+- **Tier 3（undici）**：Node.js OpenSSL → Chrome cipher 列表，但 extension 顺序不同
 
-**HTTP 模式** 通过 Node.js 的 undici 直接发请求，配置类 Chrome 的 TLS 参数（cipher 顺序、签名算法、ALPN）。Session 数据从浏览器导出后持久化使用，token 过期时自动刷新，无需再开浏览器。
+Studio 配置（可用的音频类型、幻灯片类型、文档类型）和配额从服务端**动态获取**，不硬编码任何 artifact 类型。
 
 对话使用独立的流式端点（`GenerateFreeFormStreamed`）。
 
 ## 测试
 
 ```bash
-# 单元测试（55 个）
+# 单元测试（65 个）
 npm test
 
 # E2E 测试（18 个，需要有效 session）
@@ -595,8 +626,9 @@ npm run test:e2e
 | 文件 | 用途 |
 |------|------|
 | `~/.notebooklm/chrome-profile` | Chrome 持久登录配置 |
-| `~/.notebooklm/session.json` | HTTP 模式的导出 session（token 自动刷新） |
+| `~/.notebooklm/session.json` | 导出的 session（token 通过 cookie 自动刷新） |
 | `~/.notebooklm/rpc-ids.json` | RPC ID 覆盖配置（Google 更新 ID 时使用） |
+| `bin/curl-impersonate` | 自动安装的 curl-impersonate 二进制 |
 
 ## 许可证
 
@@ -606,9 +638,29 @@ MIT
 
 ## Changelog / 更新日志
 
-### v0.1.0 (2026-03-16)
+### v0.2.0 (2026-03-16)
 
-**Initial Release / 首次发布**
+- 3-tier TLS fingerprint transport: curl-impersonate (100%) → tls-client (99%) → undici (~40%)
+- `--transport auto` mode with runtime tier detection
+- curl-impersonate auto-installed on `npm install` (lexiforest fork, BoringSSL, all platforms)
+- Dynamic studio config: `getStudioConfig()` fetches audio/slide/doc types from server
+- Quota API: `getQuota()` checks remaining generation limits
+- Dynamic `hl` language parameter from browser locale / HTML
+- Docker support with multi-arch Dockerfile (amd64/arm64)
+- 65 unit tests + 18 E2E tests
+
+---
+
+- 3 层 TLS 指纹传输体系：curl-impersonate (100%) → tls-client (99%) → undici (~40%)
+- `--transport auto` 模式，运行时自动检测最佳传输层
+- curl-impersonate 在 `npm install` 时自动安装（lexiforest fork，BoringSSL，全平台）
+- 动态 Studio 配置：`getStudioConfig()` 从服务端获取音频/幻灯片/文档类型
+- 配额 API：`getQuota()` 查询剩余生成次数
+- `hl` 语言参数从浏览器 locale / HTML 动态检测
+- Docker 支持，多架构 Dockerfile（amd64/arm64）
+- 65 个单元测试 + 18 个 E2E 测试
+
+### v0.1.0 (2026-03-16)
 
 - Boq RPC protocol reverse-engineering (`batchexecute` + `GenerateFreeFormStreamed`)
 - Two transport modes: Browser (Puppeteer) and pure HTTP (undici + Chrome TLS fingerprint)
