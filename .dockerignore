@@ -1,7 +1,9 @@
 node_modules/
 dist/
+bin/
 .git/
 *.tsbuildinfo
 tests/
 .DS_Store
 output/
+.claude/
