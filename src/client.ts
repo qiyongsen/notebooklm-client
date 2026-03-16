@@ -1,9 +1,12 @@
 /**
  * NotebookLM RPC client — transport-agnostic.
  *
- * Supports two transport modes:
- *   - 'browser' (default): Real Chrome via Puppeteer, authentic TLS fingerprint
- *   - 'http': Direct Node.js HTTP via undici, Chrome-like TLS config
+ * Transport modes (auto-detected in 'auto' mode):
+ *   - 'browser':          Real Chrome via Puppeteer (100% fingerprint, heavy)
+ *   - 'curl-impersonate': curl with BoringSSL (100% fingerprint, macOS/Linux)
+ *   - 'tls-client':       Go uTLS via FFI (99% fingerprint, all platforms)
+ *   - 'http':             undici with Chrome ciphers (~40% fingerprint, always available)
+ *   - 'auto':             Best available non-browser transport
  */
 
 import { mkdirSync } from 'node:fs';
@@ -15,7 +18,8 @@ import { parseEnvelopes } from './boq-parser.js';
 import { NB_RPC, NB_URLS, DEFAULT_USER_CONFIG, PLATFORM_WEB } from './rpc-ids.js';
 import { loadNbRpcIds } from './rpc-config.js';
 import { BrowserTransport } from './transport-browser.js';
-import { HttpTransport } from './transport-http.js';
+import { detectBestTier, createTransport, TIER_LABELS } from './transport-resolver.js';
+import type { TransportTier } from './transport-resolver.js';
 import { saveSession, loadSession, refreshTokens } from './session-store.js';
 import type { Transport } from './transport.js';
 import {
@@ -49,7 +53,7 @@ import type {
   BrowserLaunchOptions,
 } from './types.js';
 
-export type TransportMode = 'browser' | 'http';
+export type TransportMode = 'browser' | 'curl-impersonate' | 'tls-client' | 'http' | 'auto';
 
 export interface ConnectOptions extends BrowserLaunchOptions {
   /** Transport mode. Default: 'browser'. */
@@ -58,6 +62,10 @@ export interface ConnectOptions extends BrowserLaunchOptions {
   sessionPath?: string;
   /** Pre-built session data for HTTP mode. Takes precedence over sessionPath. */
   session?: NotebookRpcSession;
+  /** Path to curl-impersonate binary. Auto-detected if omitted. */
+  curlBinaryPath?: string;
+  /** tls-client profile identifier. Default: 'chrome_131'. */
+  tlsClientProfile?: string;
 }
 
 export class NotebookClient {
@@ -71,10 +79,10 @@ export class NotebookClient {
   async connect(config: ConnectOptions = {}): Promise<void> {
     this.transportMode = config.transport ?? 'browser';
 
-    if (this.transportMode === 'http') {
-      await this.connectHttp(config);
-    } else {
+    if (this.transportMode === 'browser') {
       await this.connectBrowser(config);
+    } else {
+      await this.connectHeadless(config);
     }
   }
 
@@ -93,7 +101,7 @@ export class NotebookClient {
     }
   }
 
-  private async connectHttp(config: ConnectOptions): Promise<void> {
+  private async connectHeadless(config: ConnectOptions): Promise<void> {
     let session = config.session ?? null;
 
     if (!session) {
@@ -102,35 +110,46 @@ export class NotebookClient {
 
     if (!session) {
       throw new SessionError(
-        'No session available for HTTP transport. ' +
+        'No session available. ' +
         'Run with transport="browser" first to export a session, ' +
         'or provide session data via config.session.',
       );
     }
 
     const sessionPath = config.sessionPath;
-    const ht = new HttpTransport({
+    const onSessionExpired = async (): Promise<NotebookRpcSession> => {
+      console.error('NotebookLM: Token expired, auto-refreshing...');
+      try {
+        return await refreshTokens(session!, sessionPath);
+      } catch {
+        const fromDisk = await loadSession(sessionPath);
+        if (fromDisk) return fromDisk;
+        throw new SessionError(
+          'Session expired and auto-refresh failed (cookies may be invalid). ' +
+          'Re-run `export-session` to log in again.',
+        );
+      }
+    };
+
+    // Determine transport tier
+    let tier: TransportTier;
+    if (this.transportMode === 'auto') {
+      tier = await detectBestTier({ curlBinaryPath: config.curlBinaryPath });
+    } else {
+      // Direct tier selection: 'curl-impersonate' | 'tls-client' | 'http'
+      tier = this.transportMode as TransportTier;
+    }
+
+    this.transport = await createTransport(tier, {
       session,
-      onSessionExpired: async () => {
-        // Auto-refresh tokens using long-lived cookies (no browser needed).
-        // Falls back to loading from disk if another process already refreshed.
-        console.error('NotebookLM: Token expired, auto-refreshing...');
-        try {
-          return await refreshTokens(session, sessionPath);
-        } catch {
-          // refreshTokens failed — try loading from disk as fallback
-          const fromDisk = await loadSession(sessionPath);
-          if (fromDisk) return fromDisk;
-          throw new SessionError(
-            'Session expired and auto-refresh failed (cookies may be invalid). ' +
-            'Re-run `export-session` to log in again.',
-          );
-        }
-      },
+      curlBinaryPath: config.curlBinaryPath,
+      tlsClientProfile: config.tlsClientProfile,
+      onSessionExpired,
     });
 
-    this.transport = ht;
-    console.error(`NotebookLM: Connected via HTTP (bl=${session.bl.slice(0, 40)}...)`);
+    // Update transportMode to actual tier used (for getTransportMode())
+    this.transportMode = tier;
+    console.error(`NotebookLM: Connected via ${TIER_LABELS[tier]} (bl=${session.bl.slice(0, 40)}...)`);
   }
 
   async disconnect(): Promise<void> {

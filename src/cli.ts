@@ -20,8 +20,9 @@ program
 
 function addBrowserOptions(cmd: Command): Command {
   return cmd
-    .option('--transport <mode>', 'Transport mode: browser or http (default: browser)')
-    .option('--session-path <path>', 'Session file path for HTTP mode')
+    .option('--transport <mode>', 'Transport: browser | auto | curl-impersonate | tls-client | http (default: browser)')
+    .option('--session-path <path>', 'Session file path for non-browser modes')
+    .option('--curl-path <path>', 'Path to curl-impersonate binary')
     .option('--profile <dir>', 'Chrome profile directory (default: ~/.notebooklm/chrome-profile)')
     .option('--headless', 'Run in headless mode')
     .option('--chrome-path <path>', 'Path to Chrome executable');
@@ -43,7 +44,7 @@ function buildSource(opts: { url?: string; text?: string; topic?: string; resear
 }
 
 async function withClient(
-  opts: { transport?: string; sessionPath?: string; profile?: string; headless?: boolean; chromePath?: string },
+  opts: { transport?: string; sessionPath?: string; curlPath?: string; profile?: string; headless?: boolean; chromePath?: string },
   fn: (client: NotebookClient) => Promise<void>,
 ): Promise<void> {
   const client = new NotebookClient();
@@ -51,6 +52,7 @@ async function withClient(
     await client.connect({
       transport: (opts.transport as TransportMode) ?? 'browser',
       sessionPath: opts.sessionPath,
+      curlBinaryPath: opts.curlPath,
       profileDir: opts.profile,
       headless: opts.headless,
       executablePath: opts.chromePath,

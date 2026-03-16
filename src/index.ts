@@ -23,6 +23,12 @@ export type { Transport, TransportRequest } from './transport.js';
 export { BrowserTransport } from './transport-browser.js';
 export { HttpTransport } from './transport-http.js';
 export type { HttpTransportOptions } from './transport-http.js';
+export { CurlTransport } from './transport-curl.js';
+export type { CurlTransportOptions } from './transport-curl.js';
+export { TlsClientTransport } from './transport-tlsclient.js';
+export type { TlsClientTransportOptions } from './transport-tlsclient.js';
+export { detectBestTier, createTransport, TIER_LABELS } from './transport-resolver.js';
+export type { TransportTier, TransportFactoryOptions } from './transport-resolver.js';
 
 // Session persistence
 export { saveSession, loadSession, hasValidSession, refreshTokens } from './session-store.js';

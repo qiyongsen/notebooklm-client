@@ -1,0 +1,13 @@
+# Usage:
+#   docker compose run notebooklm list --transport auto
+#   docker compose run notebooklm audio --transport auto --url "https://example.com" -o /output -l en
+#
+# Session file is mounted from host ~/.notebooklm/
+# Export session on host first: npx notebooklm export-session
+
+services:
+  notebooklm:
+    build: .
+    volumes:
+      - ~/.notebooklm:/root/.notebooklm
+      - ./output:/output
