@@ -1,9 +1,9 @@
 ---
-name: nb
-description: Complete API for Google NotebookLM — create notebooks, add sources, generate podcasts/slides/flashcards, chat, deep research. Activates on /nb or intent like "create a podcast about X", "research topic Y", "summarize this URL"
+name: notecraft
+description: "Complete API for Google NotebookLM. Create notebooks, add sources, generate podcasts, slides, flashcards, chat, deep research. Activates on /nb or intent like create a podcast, research topic, summarize URL"
 user-invocable: true
 allowed-tools: Bash, Read, Write
-argument-hint: [research|podcast|analyze|chat|studio] [args...]
+argument-hint: "[research|podcast|analyze|chat|studio] [args...]"
 ---
 
 # NotebookLM Automation

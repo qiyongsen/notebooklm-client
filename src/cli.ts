@@ -368,6 +368,109 @@ const diagnoseCmd = new Command('diagnose')
 
 program.addCommand(diagnoseCmd);
 
+// ── Skill Management ──
+
+const SKILL_TARGETS = [
+  { key: 'claude', label: 'Claude Code', path: ['.claude', 'skills', 'notecraft', 'SKILL.md'] },
+  { key: 'agents', label: 'Codex / Agents', path: ['.agents', 'skills', 'notecraft', 'SKILL.md'] },
+] as const;
+
+async function getSkillSource(): Promise<{ content: string; version: string }> {
+  const { readFileSync } = await import('node:fs');
+  const { join, dirname } = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const pkgDir = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const content = readFileSync(join(pkgDir, 'SKILL.md'), 'utf-8');
+  const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf-8')) as { version: string };
+  return { content, version: pkg.version };
+}
+
+async function resolveSkillPath(target: typeof SKILL_TARGETS[number], scope: string): Promise<string> {
+  const { join } = await import('node:path');
+  const { homedir } = await import('node:os');
+  const root = scope === 'user' ? homedir() : process.cwd();
+  return join(root, ...target.path);
+}
+
+const skillCmd = new Command('skill')
+  .description('Manage NotebookLM agent skill');
+
+skillCmd.addCommand(
+  new Command('install')
+    .description('Install skill into Claude Code and Codex directories')
+    .option('--scope <scope>', 'user or project', 'user')
+    .option('--target <target>', 'claude, agents, or all', 'all')
+    .action(async (opts) => {
+      const { mkdirSync, writeFileSync } = await import('node:fs');
+      const { dirname } = await import('node:path');
+      const { content, version } = await getSkillSource();
+      const stamped = content.replace(/^---\n/, `---\n# notecraft v${version}\n`);
+      const targets = opts.target === 'all' ? SKILL_TARGETS : SKILL_TARGETS.filter(t => t.key === opts.target);
+
+      for (const target of targets) {
+        const dest = await resolveSkillPath(target, opts.scope);
+        mkdirSync(dirname(dest), { recursive: true });
+        writeFileSync(dest, stamped, 'utf-8');
+        console.log(`Installed: ${dest} (${target.label})`);
+      }
+      console.log('\nRestart your agent to activate /nb command.');
+    }),
+);
+
+skillCmd.addCommand(
+  new Command('uninstall')
+    .description('Remove skill from agent directories')
+    .option('--scope <scope>', 'user or project', 'user')
+    .option('--target <target>', 'claude, agents, or all', 'all')
+    .action(async (opts) => {
+      const { existsSync, unlinkSync, rmdirSync } = await import('node:fs');
+      const { dirname } = await import('node:path');
+      const targets = opts.target === 'all' ? SKILL_TARGETS : SKILL_TARGETS.filter(t => t.key === opts.target);
+      let removed = 0;
+
+      for (const target of targets) {
+        const dest = await resolveSkillPath(target, opts.scope);
+        if (!existsSync(dest)) continue;
+        unlinkSync(dest);
+        // Clean empty parent dirs
+        try { rmdirSync(dirname(dest)); } catch { /* not empty */ }
+        console.log(`Removed: ${dest} (${target.label})`);
+        removed++;
+      }
+      if (removed === 0) console.log('Skill not installed.');
+    }),
+);
+
+skillCmd.addCommand(
+  new Command('status')
+    .description('Check installed skill status')
+    .option('--scope <scope>', 'user or project', 'user')
+    .action(async (opts) => {
+      const { existsSync, readFileSync } = await import('node:fs');
+      const { version } = await getSkillSource();
+      console.log(`CLI version: ${version}`);
+
+      for (const target of SKILL_TARGETS) {
+        const dest = await resolveSkillPath(target, opts.scope);
+        const installed = existsSync(dest);
+        const status = installed ? 'INSTALLED' : 'not installed';
+        console.log(`${target.label}: ${status}`);
+        console.log(`  Path: ${dest}`);
+        if (installed) {
+          const content = readFileSync(dest, 'utf-8');
+          const match = /notecraft v([\d.]+)/.exec(content);
+          const skillVersion = match?.[1] ?? 'unknown';
+          console.log(`  Version: ${skillVersion}`);
+          if (skillVersion !== version) {
+            console.log('  ⚠ Version mismatch — run: npx notebooklm skill install');
+          }
+        }
+      }
+    }),
+);
+
+program.addCommand(skillCmd);
+
 // ── Run ──
 
 program.parseAsync(process.argv).catch((err: unknown) => {
