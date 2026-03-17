@@ -101,6 +101,7 @@ npx notebooklm chat <notebook-id> --transport auto --question "Summarize the mai
 | "Session expired" | Auto-refreshes; if fails, re-export |
 | "Quota exceeded" | Daily limit hit — wait or upgrade |
 | "Rate limited" | Wait a few minutes, retry |
+| "Audio download returned login page" | Re-run `npx notebooklm export-session` to refresh cookies |
 
 ## Known Limits
 
@@ -108,3 +109,4 @@ npx notebooklm chat <notebook-id> --transport auto --question "Summarize the mai
 - Daily generation limits exist per type (audio, video, slides, etc.) — no API to check remaining
 - Studio types are dynamic — Google may add/remove types anytime
 - Session auto-refreshes; re-export if auth errors persist
+- **Download requires re-export after update** — if you updated notebooklm-client, re-run `export-session` to get domain-scoped cookies for CDN downloads
