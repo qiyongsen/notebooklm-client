@@ -537,25 +537,26 @@ export class NotebookClient {
   private async downloadAudioHttp(downloadUrl: string, outputDir: string): Promise<string> {
     if (!this.transport) throw new SessionError('Not connected');
 
-    const { writeFile } = await import('node:fs/promises');
-    const { request: undiciRequest } = await import('undici');
-
     mkdirSync(outputDir, { recursive: true });
 
     const session = this.transport.getSession();
+    const filePath = join(outputDir, `audio_${Date.now()}.mp4`);
 
-    // Google download URLs 302-redirect to CDN. Follow redirects manually
-    // since we need to handle cookies across redirect hops.
+    // Google download URLs redirect through auth interstitial pages.
+    // Send cookies on ALL hops (not just google.com) and follow redirects.
+    const { writeFile } = await import('node:fs/promises');
+    const { request: undiciRequest } = await import('undici');
+
     let currentUrl = downloadUrl;
-    const maxRedirects = 5;
+    const maxRedirects = 10;
     for (let i = 0; i <= maxRedirects; i++) {
-      const isGoogleOrigin = currentUrl.includes('google.com');
       const { statusCode, headers, body } = await undiciRequest(currentUrl, {
         method: 'GET',
+        // @ts-expect-error maxRedirections is valid undici option but not in @types
+        maxRedirections: 0, // handle manually to send cookies on every hop
         headers: {
           'User-Agent': session.userAgent,
-          // Only send cookies to Google origins
-          ...(isGoogleOrigin ? { 'Cookie': session.cookies } : {}),
+          'Cookie': session.cookies,
           'Referer': 'https://notebooklm.google.com/',
         },
       });
@@ -563,9 +564,7 @@ export class NotebookClient {
       if (statusCode >= 300 && statusCode < 400) {
         const location = headers.location;
         if (!location) throw new Error(`Audio download: ${statusCode} with no Location header`);
-        // Resolve relative redirects
         currentUrl = new URL(location as string, currentUrl).href;
-        // Consume body to free socket
         await body.dump();
         continue;
       }
@@ -576,9 +575,14 @@ export class NotebookClient {
       }
 
       const buffer = Buffer.from(await body.arrayBuffer());
-      const filePath = join(outputDir, `audio_${Date.now()}.mp4`);
-      await writeFile(filePath, buffer);
 
+      // Verify we got actual audio, not an HTML login page
+      const head = buffer.slice(0, 50).toString('utf-8');
+      if (head.includes('<!doctype') || head.includes('<html')) {
+        throw new Error('Audio download returned login page — session cookies may be invalid. Re-run: npx notebooklm export-session');
+      }
+
+      await writeFile(filePath, buffer);
       console.error(`NotebookLM: Audio downloaded to ${filePath}`);
       return filePath;
     }
@@ -621,9 +625,12 @@ export class NotebookClient {
     await this.pollSourcesReady(notebookId, 120_000);
 
     onProgress?.({ status: 'generating', message: 'Generating audio overview...' });
+    const config = await this.getStudioConfig(notebookId);
+    const audioType = config.audioTypes.find(t => t.name.includes('Deep Dive')) ?? config.audioTypes[0];
+    if (!audioType) throw new Error('No audio types available from Studio config');
     const { artifactId } = await this.generateArtifact(
       notebookId,
-      1,
+      audioType.id,
       sourceIds,
       { language: options.language, customPrompt: options.customPrompt },
     );
