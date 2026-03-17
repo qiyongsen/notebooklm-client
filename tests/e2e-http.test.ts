@@ -77,6 +77,18 @@ describe('E2E HTTP Transport', () => {
     }
   });
 
+  // ── Account Info ──
+
+  it('should get account info with valid limits', async () => {
+    if (!hasSession) return expect(true).toBe(true);
+    const account = await client.getAccountInfo();
+    expect(account.planType).toBeGreaterThan(0);
+    expect(account.notebookLimit).toBeGreaterThan(0);
+    expect(account.sourceLimit).toBeGreaterThan(0);
+    expect(account.sourceWordLimit).toBeGreaterThan(0);
+    expect(typeof account.isPlus).toBe('boolean');
+  }, 30_000);
+
   // ── Create Notebook ──
 
   it('should create a notebook', async () => {
@@ -189,6 +201,19 @@ describe('E2E HTTP Transport', () => {
     await client.deleteChatThread(testChatThreadId);
   }, 30_000);
 
+  // ── Studio Config ──
+
+  it('should get studio config with dynamic types', async () => {
+    if (!hasSession || !testNotebookId) return expect(true).toBe(true);
+    const config = await client.getStudioConfig(testNotebookId);
+    expect(Array.isArray(config.audioTypes)).toBe(true);
+    expect(config.audioTypes.length).toBeGreaterThan(0);
+    expect(config.audioTypes[0]!.id).toBeDefined();
+    expect(config.audioTypes[0]!.name).toBeTruthy();
+    expect(Array.isArray(config.slideTypes)).toBe(true);
+    expect(Array.isArray(config.docTypes)).toBe(true);
+  }, 30_000);
+
   // ── Get Artifacts (empty) ──
 
   it('should get artifacts (empty for new notebook)', async () => {
@@ -201,11 +226,16 @@ describe('E2E HTTP Transport', () => {
 
   it('should generate an audio artifact', async () => {
     if (!hasSession || !testNotebookId || !testSourceId) return expect(true).toBe(true);
+    // Use dynamic studio config instead of hardcoded type ID
+    const config = await client.getStudioConfig(testNotebookId);
+    const deepDive = config.audioTypes.find(t => t.name.includes('Deep Dive'));
+    const audioType = deepDive ?? config.audioTypes[0];
+    expect(audioType).toBeDefined();
+
     const result = await client.generateArtifact(
       testNotebookId,
-      1, // audio deep dive
+      audioType!.id,
       [testSourceId],
-      { language: 'en' },
     );
     expect(result.artifactId).toBeTruthy();
     expect(typeof result.title).toBe('string');
