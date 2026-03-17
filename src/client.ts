@@ -412,7 +412,7 @@ export class NotebookClient {
   ): Promise<{ artifactId: string; title: string }> {
     const sourceIdArraysTriple = sourceIds.map((id) => [[id]]);
     const sourceIdArraysSingle = sourceIds.map((id) => [id]);
-    const language = options?.language ?? 'en';
+    const language = options?.language ?? this.transport!.getSession().language ?? 'en';
     const prompt = options?.customPrompt ?? null;
 
     const raw = await this.callBatchExecute(
