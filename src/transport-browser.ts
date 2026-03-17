@@ -5,7 +5,7 @@
  */
 
 import { type Browser, type Page } from 'puppeteer-core';
-import { launchBrowser, DEFAULT_PROFILE_DIR } from './browser.js';
+import { launchBrowser, getDefaultProfileDir } from './browser.js';
 import { SessionError } from './errors.js';
 import { withRefreshGuard } from './utils/refresh-guard.js';
 import { NB_URLS } from './rpc-ids.js';
@@ -20,7 +20,7 @@ export class BrowserTransport implements Transport {
   constructor(private opts: BrowserLaunchOptions = {}) {}
 
   async init(): Promise<void> {
-    const profileDir = this.opts.profileDir ?? DEFAULT_PROFILE_DIR;
+    const profileDir = this.opts.profileDir ?? getDefaultProfileDir();
     const { existsSync } = await import('node:fs');
     const { join } = await import('node:path');
     const isFirstRun = !existsSync(join(profileDir, 'Default'));

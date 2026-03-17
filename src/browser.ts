@@ -15,7 +15,10 @@ import { BrowserError } from './errors.js';
 import { getProfileDir } from './paths.js';
 import type { BrowserLaunchOptions } from './types.js';
 
-const DEFAULT_PROFILE_DIR = getProfileDir();
+// Lazy — must not evaluate at import time (setHomeDir may not have been called yet)
+function getDefaultProfileDir(): string {
+  return getProfileDir();
+}
 
 // ── Chrome Detection ──
 
@@ -429,7 +432,7 @@ export interface BrowserSession {
 }
 
 export async function launchBrowser(opts: BrowserLaunchOptions = {}): Promise<BrowserSession> {
-  const profileDir = opts.profileDir ?? DEFAULT_PROFILE_DIR;
+  const profileDir = opts.profileDir ?? getDefaultProfileDir();
   const chromePath = opts.executablePath ?? detectChromePath();
 
   if (!chromePath) {
@@ -466,4 +469,4 @@ export async function launchBrowser(opts: BrowserLaunchOptions = {}): Promise<Br
   return { browser, page };
 }
 
-export { DEFAULT_PROFILE_DIR };
+export { getDefaultProfileDir as getDefaultProfileDir };

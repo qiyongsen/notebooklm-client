@@ -15,8 +15,8 @@ export function getHomeDir(): string {
   return _homeOverride ?? process.env['NOTEBOOKLM_HOME'] ?? join(homedir(), '.notebooklm');
 }
 
-/** Override the home directory (e.g. from --home CLI flag). */
-export function setHomeDir(dir: string): void {
+/** Override the home directory (e.g. from --home CLI flag). Pass null to reset. */
+export function setHomeDir(dir: string | null): void {
   _homeOverride = dir;
 }
 
