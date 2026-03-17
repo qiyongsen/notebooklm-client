@@ -163,12 +163,21 @@ export interface StudioConfig {
   docTypes: StudioDocType[];
 }
 
-export interface QuotaInfo {
-  audioRemaining: number;
-  audioLimit: number;
+export interface AccountInfo {
+  /** Account plan type (1=free, 6=plus, etc.) */
+  planType: number;
+  /** Maximum notebooks allowed */
   notebookLimit: number;
+  /** Maximum sources per notebook */
+  sourceLimit: number;
+  /** Maximum words per source */
   sourceWordLimit: number;
+  /** Whether the account has Plus features */
+  isPlus: boolean;
 }
+
+/** @deprecated Use AccountInfo instead */
+export type QuotaInfo = AccountInfo;
 
 export interface NotebookChatChunk {
   text: string;

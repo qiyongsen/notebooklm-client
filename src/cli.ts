@@ -347,10 +347,13 @@ const diagnoseCmd = new Command('diagnose')
         const notebooks = await client.listNotebooks();
         console.log(`  Status:    OK (${notebooks.length} notebooks)`);
         try {
-          const quota = await client.getQuota();
-          console.log(`  Quota:     audio=${quota.audioRemaining}/${quota.audioLimit}`);
+          const account = await client.getAccountInfo();
+          console.log(`  Plan:      ${account.isPlus ? 'Plus' : 'Free'} (type=${account.planType})`);
+          console.log(`  Notebooks: max ${account.notebookLimit}`);
+          console.log(`  Sources:   max ${account.sourceLimit}/notebook`);
+          console.log(`  Words:     max ${account.sourceWordLimit}/source`);
         } catch {
-          console.log('  Quota:     FAILED');
+          console.log('  Account:   FAILED');
         }
         await client.disconnect();
       } catch (err) {

@@ -62,6 +62,7 @@ export type {
   StudioConfig,
   StudioAudioType,
   StudioDocType,
+  AccountInfo,
   QuotaInfo,
   NotebookSession,
   NotebookRpcSession,

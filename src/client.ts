@@ -39,6 +39,7 @@ import type {
   NotebookRpcSession,
   NotebookInfo,
   StudioConfig,
+  AccountInfo,
   QuotaInfo,
   SourceInfo,
   ArtifactInfo,
@@ -470,9 +471,15 @@ export class NotebookClient {
     return parseStudioConfig(raw);
   }
 
-  async getQuota(): Promise<QuotaInfo> {
+  /** Get account info (plan type, limits). RPC: GetOrCreateAccount */
+  async getAccountInfo(): Promise<AccountInfo> {
     const raw = await this.callBatchExecute(NB_RPC.GET_QUOTA, [[...DEFAULT_USER_CONFIG]], '/');
     return parseQuota(raw);
+  }
+
+  /** @deprecated Use getAccountInfo() instead */
+  async getQuota(): Promise<QuotaInfo> {
+    return this.getAccountInfo();
   }
 
   async downloadAudio(downloadUrl: string, outputDir: string): Promise<string> {

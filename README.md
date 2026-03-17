@@ -134,9 +134,9 @@ await client.addTextSource(notebookId, 'Title', 'Content...');
 const detail = await client.getNotebookDetail(notebookId);
 const { text } = await client.sendChat(notebookId, 'Summarize', detail.sources.map(s => s.id));
 
-// Check available features and quota
+// Check available features and account limits
 const config = await client.getStudioConfig(notebookId);
-const quota = await client.getQuota();
+const account = await client.getAccountInfo();
 
 // Generate artifacts (audio, slides, docs — types fetched dynamically)
 const audioType = config.audioTypes.find(t => t.name === 'Deep Dive');
@@ -173,7 +173,7 @@ await client.deleteChatThread(threadId)
 
 // Studio (dynamic — always fetch types from server)
 await client.getStudioConfig(notebookId)              // → StudioConfig
-await client.getQuota()                               // → QuotaInfo
+await client.getAccountInfo()                          // → AccountInfo
 
 // Artifacts
 await client.generateArtifact(notebookId, type, sourceIds, options)
@@ -213,7 +213,7 @@ Run `npx notebooklm diagnose` and paste the output when [reporting issues](https
 Common issues:
 - **"No session available"** → Run `npx notebooklm export-session`
 - **"Session expired"** → Tokens auto-refresh; if still fails, re-run `export-session`
-- **Audio generation fails** → Check quota with the library's `getQuota()` method
+- **Audio generation fails** → Check account limits with `getAccountInfo()`
 
 ## License
 
@@ -353,9 +353,9 @@ await client.addTextSource(notebookId, '标题', '内容...');
 const detail = await client.getNotebookDetail(notebookId);
 const { text } = await client.sendChat(notebookId, '帮我总结', detail.sources.map(s => s.id));
 
-// 查看可用功能和配额
+// 查看可用功能和账号限额
 const config = await client.getStudioConfig(notebookId);
-const quota = await client.getQuota();
+const account = await client.getAccountInfo();
 
 // 生成产物（音频、幻灯片、文档 —— 类型从服务端动态获取）
 const audioType = config.audioTypes.find(t => t.name === 'Deep Dive');
@@ -392,7 +392,7 @@ await client.deleteChatThread(threadId)
 
 // Studio（动态 —— 始终从服务端获取类型）
 await client.getStudioConfig(notebookId)              // → StudioConfig
-await client.getQuota()                               // → QuotaInfo
+await client.getAccountInfo()                          // → AccountInfo
 
 // 产物
 await client.generateArtifact(notebookId, type, sourceIds, options)
@@ -432,7 +432,7 @@ npx notebooklm skill uninstall            # 卸载
 常见问题：
 - **"No session available"** → 运行 `npx notebooklm export-session`
 - **"Session expired"** → Token 会自动刷新；如果仍然失败，重新运行 `export-session`
-- **音频生成失败** → 通过 `getQuota()` 检查配额
+- **音频生成失败** → 通过 `getAccountInfo()` 检查账号限额
 
 ## 许可证
 
@@ -447,7 +447,7 @@ MIT
 - `--transport auto` mode with automatic best-engine selection
 - Auto-installed optimized HTTP engine on `npm install`
 - Dynamic studio config: `getStudioConfig()` fetches available types from server
-- Quota API: `getQuota()` checks remaining generation limits
+- Account API: `getAccountInfo()` returns plan type, notebook/source limits
 - Multi-account support: `--home` flag and `NOTEBOOKLM_HOME` env var
 - `diagnose` command for troubleshooting
 - Docker support (amd64/arm64)
@@ -457,7 +457,7 @@ MIT
 - `--transport auto` 模式，自动选择最佳引擎
 - `npm install` 时自动安装优化 HTTP 引擎
 - 动态 Studio 配置：`getStudioConfig()` 从服务端获取可用类型
-- 配额 API：`getQuota()` 查询剩余生成次数
+- 账号 API：`getAccountInfo()` 返回计划类型、笔记本/来源限额
 - 多账号支持：`--home` 参数和 `NOTEBOOKLM_HOME` 环境变量
 - `diagnose` 诊断命令
 - Docker 支持（amd64/arm64）

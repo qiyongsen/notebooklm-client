@@ -3,7 +3,8 @@
  */
 
 import { parseEnvelopes } from './boq-parser.js';
-import type { NotebookInfo, SourceInfo, ArtifactInfo, StudioConfig, StudioAudioType, StudioDocType, QuotaInfo } from './types.js';
+import type { NotebookInfo, SourceInfo, ArtifactInfo, StudioConfig, StudioAudioType, StudioDocType, AccountInfo } from './types.js';
+type QuotaInfo = AccountInfo;
 
 // ── Helpers ──
 
@@ -324,18 +325,20 @@ export function parseStudioConfig(raw: string): StudioConfig {
 
 export function parseQuota(raw: string): QuotaInfo {
   const inner = extractInner(raw);
-  if (!Array.isArray(inner)) return { audioRemaining: 0, audioLimit: 0, notebookLimit: 0, sourceWordLimit: 0 };
+  if (!Array.isArray(inner)) return { planType: 0, notebookLimit: 0, sourceLimit: 0, sourceWordLimit: 0, isPlus: false };
 
-  // Response: [[null, [remaining, limit, nbLimit, wordLimit, ?], ...]]
-  // extractInner returns the outer array; unwrap if double-nested
+  // Response: [[null, [planType, notebookLimit, sourceLimit, sourceWordLimit, ?], [bool], [[?]], [isPlus, ?, ?, ?]]]
+  // RPC: GetOrCreateAccount → account config, NOT usage/remaining counts
   const entry = Array.isArray(inner[0]) && !Array.isArray(inner[1]) ? inner[0] as unknown[] : inner;
   const limits = Array.isArray(entry[1]) ? entry[1] as number[] : [];
+  const flags = Array.isArray(entry[4]) ? entry[4] as unknown[] : [];
 
   return {
-    audioRemaining: typeof limits[0] === 'number' ? limits[0] : 0,
-    audioLimit: typeof limits[1] === 'number' ? limits[1] : 0,
-    notebookLimit: typeof limits[2] === 'number' ? limits[2] : 0,
+    planType: typeof limits[0] === 'number' ? limits[0] : 0,
+    notebookLimit: typeof limits[1] === 'number' ? limits[1] : 0,
+    sourceLimit: typeof limits[2] === 'number' ? limits[2] : 0,
     sourceWordLimit: typeof limits[3] === 'number' ? limits[3] : 0,
+    isPlus: flags[0] === true,
   };
 }
 

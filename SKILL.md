@@ -68,14 +68,14 @@ Each home directory contains: `session.json`, `chrome-profile/`, `rpc-ids.json`.
 - "Create slides from my research"
 - "What notebooks do I have?"
 - "Chat with my notebook about [topic]"
-- "Check my NotebookLM quota"
+- "Check my NotebookLM account limits"
 
 ## Autonomy Rules
 
 **Run automatically (no confirmation needed):**
 - `npx notebooklm list` — list notebooks
 - `npx notebooklm detail <id>` — show notebook details
-- tsx scripts calling: `getQuota()`, `getStudioConfig()`, `listNotebooks()`, `getNotebookDetail()`, `getSourceSummary()`
+- tsx scripts calling: `getAccountInfo()`, `getStudioConfig()`, `listNotebooks()`, `getNotebookDetail()`, `getSourceSummary()`
 
 **Ask before running:**
 - `npx notebooklm audio` — long-running, consumes quota
@@ -128,7 +128,7 @@ Save to `/tmp/nb-<task>.ts`, run with `npx tsx /tmp/nb-<task>.ts`.
 
 | Task | Code |
 |------|------|
-| Check quota | `await client.getQuota()` → `{ audioRemaining, audioLimit, notebookLimit, sourceWordLimit }` |
+| Account info | `await client.getAccountInfo()` → `{ planType, notebookLimit, sourceLimit, sourceWordLimit, isPlus }` |
 | Studio config | `await client.getStudioConfig(notebookId)` → `{ audioTypes, slideTypes, docTypes }` |
 | Create notebook | `await client.createNotebook()` → `{ notebookId }` |
 | Delete notebook | `await client.deleteNotebook(notebookId)` |
@@ -232,15 +232,14 @@ for (const url of urls) {
 }
 ```
 
-### Check Quota Before Generating
+### Check Account Limits
 
 ```typescript
-const quota = await client.getQuota();
-console.log(`Audio remaining: ${quota.audioRemaining}`);
-if (quota.audioRemaining <= 0) {
-  console.log('No audio quota remaining. Try again later or upgrade.');
-  return;
-}
+const account = await client.getAccountInfo();
+console.log(`Plan: ${account.isPlus ? 'Plus' : 'Free'}`);
+console.log(`Notebooks: max ${account.notebookLimit}`);
+console.log(`Sources: max ${account.sourceLimit} per notebook`);
+console.log(`Words: max ${account.sourceWordLimit} per source`);
 ```
 
 ## Output Style
@@ -262,8 +261,8 @@ if (quota.audioRemaining <= 0) {
 | "No session available" | Not logged in | Run `npx notebooklm export-session` |
 | "Session expired" | Token expired | Auto-refreshes; if fails, re-run export-session |
 | "HTTP 401/400" | Auth invalid | Re-run `npx notebooklm export-session` |
-| `UserDisplayableError [[null,[[1]]]]` | Quota exhausted | Inform user to wait or upgrade |
-| Empty artifactId from generateArtifact | Generation failed | Check quota with `getQuota()` first |
+| `Quota exceeded or generation limit reached` | Daily generation limit hit | Inform user to wait or upgrade |
+| `Rate limited` | Too many requests | Wait a few minutes and retry |
 | "curl-impersonate binary not found" | Not installed | Run `npm run setup` or use `--transport http` |
 | RPC parse errors | Google changed API | Check `~/.notebooklm/rpc-ids.json` for overrides |
 
@@ -274,7 +273,7 @@ if (quota.audioRemaining <= 0) {
 
 ## Known Limitations
 
-- **Audio generation requires quota** — check with `getQuota()` before starting
+- **Generation has daily limits** — check plan with `getAccountInfo()`, no per-operation remaining count available
 - **Audio generation takes 5-10 minutes** — do NOT poll more than once per 15 seconds
 - **Session cookies last weeks**, but CSRF tokens expire every 1-2 hours (auto-refreshed)
 - **Transport auto-detection:** curl-impersonate (100% fingerprint) → tls-client (99%) → undici (~40%)
