@@ -787,9 +787,37 @@ export class NotebookClient {
         return [sourceId];
       }
       case 'research': {
-        await this.createWebSearch(notebookId, source.topic!, source.researchMode ?? 'fast');
-        await humanSleep(10000);
+        const mode = source.researchMode ?? 'fast';
+        await this.createWebSearch(notebookId, source.topic!, mode);
+
+        // Poll until research sources appear.
+        // fast mode: ~30s-2min, deep mode: 2-5min
+        const timeoutMs = mode === 'deep' ? 300_000 : 120_000;
+        const start = Date.now();
+        let lastCount = 0;
+        let stableRounds = 0;
+
+        while (Date.now() - start < timeoutMs) {
+          await humanSleep(5000);
+          const detail = await this.getNotebookDetail(notebookId);
+          const count = detail.sources.length;
+
+          if (count > 0 && count === lastCount) {
+            stableRounds++;
+            // Wait for count to stabilize (no new sources for 3 consecutive polls)
+            if (stableRounds >= 3) break;
+          } else {
+            stableRounds = 0;
+          }
+          lastCount = count;
+        }
+
         const detail = await this.getNotebookDetail(notebookId);
+        if (detail.sources.length === 0) {
+          console.error('NotebookLM: Research returned no sources');
+        } else {
+          console.error(`NotebookLM: Research found ${detail.sources.length} sources`);
+        }
         return detail.sources.map((s) => s.id);
       }
     }
