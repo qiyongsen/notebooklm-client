@@ -951,13 +951,17 @@ export class NotebookClient {
     }
   }
 
-  private async downloadAudioHttp(downloadUrl: string, outputDir: string): Promise<string> {
+  private async downloadFileHttp(
+    downloadUrl: string,
+    outputDir: string,
+    filename: string,
+  ): Promise<string> {
     if (!this.transport) throw new SessionError('Not connected');
 
     mkdirSync(outputDir, { recursive: true });
 
     const session = this.transport.getSession();
-    const filePath = join(outputDir, `audio_${Date.now()}.mp4`);
+    const filePath = join(outputDir, filename);
 
     // Google download URLs redirect across domains (lh3.googleusercontent.com →
     // lh3.google.com → accounts.google.com). Cookies must be sent with correct
@@ -1047,8 +1051,12 @@ export class NotebookClient {
 
     await unlink(cookieJarPath).catch(() => {});
 
-    console.error(`NotebookLM: Audio downloaded to ${filePath}`);
+    console.error(`NotebookLM: Downloaded to ${filePath}`);
     return filePath;
+  }
+
+  private async downloadAudioHttp(downloadUrl: string, outputDir: string): Promise<string> {
+    return this.downloadFileHttp(downloadUrl, outputDir, `audio_${Date.now()}.mp4`);
   }
 
   async sendChat(notebookId: string, message: string, sourceIds: string[]): Promise<{ text: string; threadId: string }> {
@@ -1167,7 +1175,7 @@ export class NotebookClient {
     await this.pollArtifactReady(notebookId, artifactId, 300_000);
 
     onProgress?.({ status: 'downloading', message: 'Saving flashcards...' });
-    const htmlPath = await this.saveArtifactHtml(artifactId, options.outputDir, 'flashcards');
+    const htmlPath = await this.saveQuizHtml(artifactId, options.outputDir, 'flashcards');
 
     onProgress?.({ status: 'completed', message: 'Flashcards generated!' });
     return { htmlPath, cards: [], notebookUrl: `${NB_URLS.BASE}/notebook/${notebookId}` };
@@ -1229,10 +1237,10 @@ export class NotebookClient {
     await this.pollArtifactReady(notebookId, artifactId, 300_000);
 
     onProgress?.({ status: 'downloading', message: 'Saving report...' });
-    const htmlPath = await this.saveArtifactHtml(artifactId, options.outputDir, 'report');
+    const markdownPath = await this.saveReport(artifactId, options.outputDir);
 
     onProgress?.({ status: 'completed', message: 'Report complete!' });
-    return { htmlPath, notebookUrl: `${NB_URLS.BASE}/notebook/${notebookId}` };
+    return { markdownPath, notebookUrl: `${NB_URLS.BASE}/notebook/${notebookId}` };
   }
 
   async runVideo(
@@ -1290,7 +1298,7 @@ export class NotebookClient {
     await this.pollArtifactReady(notebookId, artifactId, 300_000);
 
     onProgress?.({ status: 'downloading', message: 'Saving quiz...' });
-    const htmlPath = await this.saveArtifactHtml(artifactId, options.outputDir, 'quiz');
+    const htmlPath = await this.saveQuizHtml(artifactId, options.outputDir, 'quiz');
 
     onProgress?.({ status: 'completed', message: 'Quiz complete!' });
     return { htmlPath, notebookUrl: `${NB_URLS.BASE}/notebook/${notebookId}` };
@@ -1323,10 +1331,10 @@ export class NotebookClient {
     await this.pollArtifactReady(notebookId, artifactId, 300_000);
 
     onProgress?.({ status: 'downloading', message: 'Saving infographic...' });
-    const htmlPath = await this.saveArtifactHtml(artifactId, options.outputDir, 'infographic');
+    const imagePath = await this.saveInfographic(artifactId, options.outputDir);
 
     onProgress?.({ status: 'completed', message: 'Infographic complete!' });
-    return { htmlPath, notebookUrl: `${NB_URLS.BASE}/notebook/${notebookId}` };
+    return { imagePath, notebookUrl: `${NB_URLS.BASE}/notebook/${notebookId}` };
   }
 
   async runSlideDeck(
@@ -1354,11 +1362,11 @@ export class NotebookClient {
     onProgress?.({ status: 'generating', message: 'Waiting for slides...' });
     await this.pollArtifactReady(notebookId, artifactId, 300_000);
 
-    onProgress?.({ status: 'downloading', message: 'Saving slides...' });
-    const htmlPath = await this.saveArtifactHtml(artifactId, options.outputDir, 'slides');
+    onProgress?.({ status: 'downloading', message: 'Downloading slides...' });
+    const { pptxPath, pdfPath } = await this.saveSlideDeck(artifactId, options.outputDir);
 
     onProgress?.({ status: 'completed', message: 'Slide deck complete!' });
-    return { htmlPath, notebookUrl: `${NB_URLS.BASE}/notebook/${notebookId}` };
+    return { pptxPath, pdfPath, notebookUrl: `${NB_URLS.BASE}/notebook/${notebookId}` };
   }
 
   async runDataTable(
@@ -1385,10 +1393,10 @@ export class NotebookClient {
     await this.pollArtifactReady(notebookId, artifactId, 300_000);
 
     onProgress?.({ status: 'downloading', message: 'Saving data table...' });
-    const htmlPath = await this.saveArtifactHtml(artifactId, options.outputDir, 'data_table');
+    const csvPath = await this.saveDataTable(artifactId, options.outputDir);
 
     onProgress?.({ status: 'completed', message: 'Data table complete!' });
-    return { htmlPath, notebookUrl: `${NB_URLS.BASE}/notebook/${notebookId}` };
+    return { csvPath, notebookUrl: `${NB_URLS.BASE}/notebook/${notebookId}` };
   }
 
   // ── Private Helpers ──
@@ -1470,8 +1478,32 @@ export class NotebookClient {
     throw new Error('Artifact generation timed out');
   }
 
-  private async saveArtifactHtml(artifactId: string, outputDir: string, prefix: string): Promise<string> {
-    // Poll getInteractiveHtml — HTML may not be ready immediately after artifact creation
+  /** Get raw artifact metadata from the GET_INTERACTIVE_HTML RPC. */
+  private async getArtifactMetadata(artifactId: string): Promise<unknown[]> {
+    const raw = await this.callBatchExecute(NB_RPC.GET_INTERACTIVE_HTML, [artifactId]);
+    const envelopes = parseEnvelopes(raw);
+    const first = envelopes[0];
+    if (Array.isArray(first) && Array.isArray(first[0])) return first[0] as unknown[];
+    if (Array.isArray(first)) return first as unknown[];
+    return [];
+  }
+
+  /** Poll artifact metadata until a condition is met. */
+  private async pollArtifactMetadata(
+    artifactId: string,
+    isReady: (meta: unknown[]) => boolean,
+    maxAttempts = 16,
+  ): Promise<unknown[]> {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const meta = await this.getArtifactMetadata(artifactId);
+      if (meta.length > 0 && isReady(meta)) return meta;
+      await humanSleep(5000 + attempt * 3000);
+    }
+    return this.getArtifactMetadata(artifactId);
+  }
+
+  /** Save quiz/flashcards HTML (getInteractiveHtml returns HTML with data-app-data). */
+  private async saveQuizHtml(artifactId: string, outputDir: string, prefix: string): Promise<string> {
     let html = '';
     for (let attempt = 0; attempt < 12; attempt++) {
       html = await this.getInteractiveHtml(artifactId);
@@ -1482,6 +1514,135 @@ export class NotebookClient {
     const filePath = join(outputDir, `${prefix}_${Date.now()}.html`);
     writeFileSync(filePath, html, 'utf-8');
     return filePath;
+  }
+
+  /** Save slides — poll metadata[16] for PPTX/PDF URLs, then download. */
+  private async saveSlideDeck(
+    artifactId: string,
+    outputDir: string,
+  ): Promise<{ pptxPath: string; pdfPath?: string }> {
+    // Slides rendering takes 2-5 minutes — use more attempts with longer intervals
+    const meta = await this.pollArtifactMetadata(artifactId, (m) => {
+      const cfg = m[16];
+      return Array.isArray(cfg) && cfg.length >= 4 && typeof cfg[3] === 'string';
+    }, 40);
+
+    const cfg = meta[16] as unknown[];
+    if (!Array.isArray(cfg) || cfg.length < 4) {
+      throw new Error('Slide deck metadata not ready — PDF/PPTX URLs not found');
+    }
+
+    // cfg structure: [config, title, slides[], pdfUrl, pptxUrl]
+    const pdfUrl = typeof cfg[3] === 'string' ? cfg[3] : undefined;
+    const pptxUrl = typeof cfg[4] === 'string' ? cfg[4] : undefined;
+
+    const url = pptxUrl ?? pdfUrl;
+    if (!url) throw new Error('Slide deck: no download URL found in metadata');
+
+    const ext = pptxUrl ? 'pptx' : 'pdf';
+    const pptxPath = await this.downloadFileHttp(url, outputDir, `slides_${Date.now()}.${ext}`);
+
+    let pdfPath: string | undefined;
+    if (pptxUrl && pdfUrl) {
+      pdfPath = await this.downloadFileHttp(pdfUrl, outputDir, `slides_${Date.now()}.pdf`);
+    }
+
+    return { pptxPath, pdfPath };
+  }
+
+  /** Save report — poll metadata[7][0] for rendered markdown. */
+  private async saveReport(artifactId: string, outputDir: string): Promise<string> {
+    const meta = await this.pollArtifactMetadata(artifactId, (m) => {
+      const section = m[7];
+      // Before rendering: [7] = [null, [config...]]. After: [7] = ["# Markdown...", ...]
+      return Array.isArray(section) && typeof section[0] === 'string' && section[0].length > 100;
+    }, 30);
+
+    const section = meta[7] as unknown[];
+    const markdown = typeof section?.[0] === 'string' ? section[0] : undefined;
+    if (!markdown) {
+      throw new Error('Report markdown not found in metadata');
+    }
+
+    mkdirSync(outputDir, { recursive: true });
+    const filePath = join(outputDir, `report_${Date.now()}.md`);
+    writeFileSync(filePath, markdown, 'utf-8');
+    return filePath;
+  }
+
+  /** Save infographic — poll metadata for image URL, then download. */
+  private async saveInfographic(artifactId: string, outputDir: string): Promise<string> {
+    const meta = await this.pollArtifactMetadata(artifactId, (m) => {
+      const section = m[14];
+      if (!Array.isArray(section)) return false;
+      const json = JSON.stringify(section);
+      return json.includes('googleusercontent.com');
+    }, 30);
+
+    // Search for image URL in metadata[14]
+    const section = meta[14];
+    let imageUrl: string | undefined;
+    const json = JSON.stringify(section);
+    const urlMatch = json.match(/(https:\/\/lh3\.googleusercontent\.com\/[^"\\]+)/);
+    if (urlMatch) imageUrl = urlMatch[1];
+
+    if (!imageUrl) throw new Error('Infographic image URL not found in metadata');
+
+    return this.downloadFileHttp(imageUrl, outputDir, `infographic_${Date.now()}.png`);
+  }
+
+  /** Save data table — poll metadata for table data, save as CSV. */
+  private async saveDataTable(artifactId: string, outputDir: string): Promise<string> {
+    const meta = await this.pollArtifactMetadata(artifactId, (m) => {
+      // Data table content appears in metadata[18]
+      const section = m[18];
+      return Array.isArray(section) && section.length >= 2;
+    });
+
+    // Extract table structure from metadata
+    // Try to find structured data — the exact path varies, fallback to JSON dump
+    mkdirSync(outputDir, { recursive: true });
+
+    const section = meta[18];
+    let csvContent = '';
+
+    if (Array.isArray(section)) {
+      // Try to parse table cells from nested arrays
+      const rows = this.extractTableRows(section);
+      if (rows.length > 0) {
+        csvContent = rows.map(row =>
+          row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','),
+        ).join('\n');
+      }
+    }
+
+    if (!csvContent) {
+      // Fallback: save full metadata as JSON for manual inspection
+      const filePath = join(outputDir, `data_table_${Date.now()}.json`);
+      writeFileSync(filePath, JSON.stringify(section, null, 2), 'utf-8');
+      return filePath;
+    }
+
+    const filePath = join(outputDir, `data_table_${Date.now()}.csv`);
+    writeFileSync(filePath, csvContent, 'utf-8');
+    return filePath;
+  }
+
+  /** Try to extract rows from data table metadata. */
+  private extractTableRows(data: unknown[]): string[][] {
+    // Walk nested arrays to find tabular data (arrays of arrays of strings)
+    const rows: string[][] = [];
+    function walk(val: unknown): void {
+      if (!Array.isArray(val)) return;
+      // Check if this looks like a row of cells
+      if (val.length > 1 && val.every(cell => typeof cell === 'string' || typeof cell === 'number' || cell === null)) {
+        rows.push(val.map(cell => cell === null ? '' : String(cell)));
+        return;
+      }
+      for (const item of val) walk(item);
+    }
+    walk(data);
+    return rows;
   }
 
   private ensureConnected(): void {

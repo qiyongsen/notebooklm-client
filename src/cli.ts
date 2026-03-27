@@ -276,7 +276,7 @@ addBrowserOptions(addSourceOptions(reportCmd))
         },
         progressLogger,
       );
-      console.log(result.htmlPath);
+      console.log(result.markdownPath);
       console.error(`Notebook: ${result.notebookUrl}`);
     });
   });
@@ -402,7 +402,7 @@ addBrowserOptions(addSourceOptions(infographicCmd))
         },
         progressLogger,
       );
-      console.log(result.htmlPath);
+      console.log(result.imagePath);
       console.error(`Notebook: ${result.notebookUrl}`);
     });
   });
@@ -434,7 +434,8 @@ addBrowserOptions(addSourceOptions(slidesCmd))
         },
         progressLogger,
       );
-      console.log(result.htmlPath);
+      console.log(result.pptxPath);
+      if (result.pdfPath) console.log(result.pdfPath);
       console.error(`Notebook: ${result.notebookUrl}`);
     });
   });
@@ -462,7 +463,7 @@ addBrowserOptions(addSourceOptions(dataTableCmd))
         },
         progressLogger,
       );
-      console.log(result.htmlPath);
+      console.log(result.csvPath);
       console.error(`Notebook: ${result.notebookUrl}`);
     });
   });

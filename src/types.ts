@@ -243,7 +243,7 @@ export interface FlashcardsResult {
 }
 
 export interface ReportResult {
-  htmlPath: string;
+  markdownPath: string;
   notebookUrl: string;
 }
 
@@ -258,17 +258,18 @@ export interface QuizResult {
 }
 
 export interface InfographicResult {
-  htmlPath: string;
+  imagePath: string;
   notebookUrl: string;
 }
 
 export interface SlideDeckResult {
-  htmlPath: string;
+  pptxPath: string;
+  pdfPath?: string;
   notebookUrl: string;
 }
 
 export interface DataTableResult {
-  htmlPath: string;
+  csvPath: string;
   notebookUrl: string;
 }
 
