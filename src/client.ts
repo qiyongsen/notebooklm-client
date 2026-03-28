@@ -339,9 +339,7 @@ export class NotebookClient {
 
   // ── Bound RPC caller for api.ts functions ──
 
-  private get rpc() {
-    return this.callBatchExecute.bind(this);
-  }
+  private readonly rpc = this.callBatchExecute.bind(this);
 
   // ── Low-level API (delegated to api.ts) ──
 

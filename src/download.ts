@@ -55,7 +55,6 @@ export async function downloadFileHttp(
   const filePath = join(outputDir, filename);
 
   const { readFile, unlink } = await import('node:fs/promises');
-  const { writeFileSync: wfs } = await import('node:fs');
   const { execFile } = await import('node:child_process');
   const { promisify } = await import('node:util');
   const execFileAsync = promisify(execFile);
@@ -90,7 +89,7 @@ export async function downloadFileHttp(
       }
     }
   }
-  wfs(cookieJarPath, lines.join('\n'), 'utf-8');
+  writeFileSync(cookieJarPath, lines.join('\n'), 'utf-8');
 
   const curlArgs = [
     '-sSL',
