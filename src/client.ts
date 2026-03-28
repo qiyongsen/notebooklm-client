@@ -984,15 +984,22 @@ export class NotebookClient {
     const lines = ['# Netscape HTTP Cookie File'];
 
     if (session.cookieJar && session.cookieJar.length > 0) {
-      // Use domain-scoped cookies from CDP
+      // Use domain-scoped cookies (from CDP or inferred)
       for (const c of session.cookieJar) {
-        const domain = c.domain.startsWith('.') ? c.domain : `.${c.domain}`;
+        // Netscape cookie jar format:
+        // domain  domain_flag  path  secure  expires  name  value
+        // domain_flag=TRUE means tail-match (e.g. .google.com matches *.google.com)
+        // domain_flag=FALSE means exact host match
+        const isDotDomain = c.domain.startsWith('.');
+        const domain = isDotDomain ? c.domain : c.domain;
+        const domainFlag = isDotDomain ? 'TRUE' : 'FALSE';
         const secure = c.secure ? 'TRUE' : 'FALSE';
         const path = c.path ?? '/';
-        lines.push(`${domain}\tTRUE\t${path}\t${secure}\t0\t${c.name}\t${c.value}`);
+        lines.push(`${domain}\t${domainFlag}\t${path}\t${secure}\t0\t${c.name}\t${c.value}`);
       }
     } else {
-      // Fallback: flat cookies string → assume .google.com domain
+      // Fallback: flat cookies string → .google.com only.
+      // Downloads from CDN domains require export-session for proper domain cookies.
       for (const pair of session.cookies.split(';')) {
         const eq = pair.indexOf('=');
         if (eq > 0) {
