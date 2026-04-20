@@ -547,6 +547,47 @@ addBrowserOptions(detailCmd)
 
 program.addCommand(detailCmd);
 
+// ── Source Management ──
+
+const sourceCmd = new Command('source')
+  .description('Manage notebook sources');
+
+const sourceAddCmd = new Command('add')
+  .description('Add a source (file, URL, or text) to an existing notebook')
+  .argument('<notebook-id>', 'Notebook ID');
+
+addBrowserOptions(sourceAddCmd)
+  .option('--file <path>', 'Local file path (pdf, txt, md, docx, csv, pptx, epub, mp3, wav, etc.)')
+  .option('--url <url>', 'Source URL')
+  .option('--text <content>', 'Source text content')
+  .option('--title <title>', 'Title for text source (default: "Pasted Text")')
+  .action(async (notebookId: string, opts) => {
+    const provided = [opts.file, opts.url, opts.text].filter((v) => v !== undefined).length;
+    if (provided !== 1) {
+      throw new Error('Specify exactly one of --file, --url, or --text');
+    }
+    if (opts.text !== undefined && opts.text.length === 0) {
+      throw new Error('--text must not be empty');
+    }
+    if (opts.title !== undefined && opts.text === undefined) {
+      throw new Error('--title only applies to --text');
+    }
+    await withClient(opts, async (client) => {
+      let result: { sourceId: string; title: string };
+      if (opts.file !== undefined) {
+        result = await client.addFileSource(notebookId, opts.file);
+      } else if (opts.url !== undefined) {
+        result = await client.addUrlSource(notebookId, opts.url);
+      } else {
+        result = await client.addTextSource(notebookId, opts.title ?? 'Pasted Text', opts.text);
+      }
+      console.log(`Added: ${result.sourceId}  ${result.title}`);
+    });
+  });
+
+sourceCmd.addCommand(sourceAddCmd);
+program.addCommand(sourceCmd);
+
 // ── Delete Command ──
 
 const deleteCmd = new Command('delete')
