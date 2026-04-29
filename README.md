@@ -325,6 +325,51 @@ docker build -t notebooklm .
 docker run -v ~/.notebooklm:/root/.notebooklm notebooklm list --transport auto
 ```
 
+## MCP Server (for Claude Code / Claude Desktop)
+
+This fork ships an MCP server (`notebooklm-mcp`) that exposes NotebookLM as MCP tools so AI agents (Claude Code, Claude Desktop) can drive NotebookLM directly without hand-written scripts.
+
+### Tools exposed
+
+- `create_notebook(title)` — create empty notebook with title
+- `add_url_sources(notebook_id, sources)` — batch add URL sources with auto rename + 1.5s polite delay
+- `list_notebooks()` — list all notebooks
+- `get_notebook_detail(notebook_id)` — title + source list with sourceId/title/wordCount
+- `chat_with_citations(notebook_id, question, source_ids?)` — chat with per-citation metadata
+- `delete_notebook(notebook_id)`
+
+### Setup (local stdio)
+
+```bash
+# 1. First-time login (browser, one-off)
+notebooklm export-session
+# session saved to ~/.notebooklm/session.json
+
+# 2. Build the MCP server binary
+npm install
+npm run build
+npm link            # makes notebooklm-mcp available globally
+
+# 3. Configure Claude Code (~/.claude.json or .mcp.json):
+#    {
+#      "mcpServers": {
+#        "notebooklm": {
+#          "command": "notebooklm-mcp"
+#        }
+#      }
+#    }
+#    For Claude Desktop the equivalent claude_desktop_config.json works the same way.
+
+# 4. Restart Claude Code / Claude Desktop, agent now sees notebooklm-* tools
+```
+
+### Notes
+
+- **Local stdio only** — runs as a child process of Claude Code/Desktop, not a daemon. Don't deploy to cloud (multi-IP same Google session = ban risk).
+- **Session refresh is automatic** via `curl-impersonate`; you only need to log in once unless cookies are nuked.
+- **Rate limiting built in**: `add_url_sources` does 1.5s between requests (Google anti-abuse sensitive area).
+- **Transport**: server connects in `auto` mode (curl-impersonate / tls-client / http), avoiding the puppeteer `Runtime.callFunctionOn timeout` that hits chat with ≥17 sources in browser mode.
+
 ## Agent Skill
 
 Install the `/notecraft` skill for Claude Code or Codex:
