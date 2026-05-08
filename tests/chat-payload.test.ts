@@ -190,6 +190,144 @@ describe('chat payload — thread resolution', () => {
     expect(payload[8]).toBe(1);             // counter reset
   });
 
+  it('preserves each notebook history when switching A -> B -> A', async () => {
+    const mock = new MockTransport();
+    const c = makeClient(mock);
+
+    mock.chatStreamText = 'A1';
+    mock.chatStreamThreadId = 'thread-A';
+    mock.listChatThreadsResult = ['thread-A'];
+    await c.sendChat(NOTEBOOK_A, 'Q1-A', ['src-1']);
+
+    mock.chatStreamText = 'B1';
+    mock.chatStreamThreadId = 'thread-B';
+    mock.listChatThreadsResult = ['thread-B'];
+    await c.sendChat(NOTEBOOK_B, 'Q1-B', ['src-1']);
+
+    mock.chatStreamText = 'A2';
+    mock.chatStreamThreadId = 'thread-A';
+    mock.listChatThreadsResult = ['thread-A'];
+    await c.sendChat(NOTEBOOK_A, 'Q2-A', ['src-1']);
+
+    const payload = mock.lastChatPayload();
+    expect(payload[2]).toEqual([
+      ['A1', null, 2],
+      ['Q1-A', null, 1],
+    ]);
+    expect(payload[4]).toBe('thread-A');
+    expect(payload[7]).toBe(NOTEBOOK_A);
+    expect(payload[8]).toBe(2);
+  });
+
+  it('keeps concurrent chats for different notebooks isolated', async () => {
+    class DeferredMockTransport extends MockTransport {
+      private chatReplies = new Map<string, { text: string; threadId: string }>([
+        [NOTEBOOK_A, { text: 'A1', threadId: 'thread-A' }],
+        [NOTEBOOK_B, { text: 'B1', threadId: 'thread-B' }],
+      ]);
+      private listThreads = new Map<string, string[]>([
+        [NOTEBOOK_A, ['thread-A']],
+        [NOTEBOOK_B, ['thread-B']],
+      ]);
+      private waiters = new Map<string, () => void>();
+
+      async execute(req: TransportRequest): Promise<string> {
+        this.calls.push({ url: req.url, body: { ...req.body }, queryParams: { ...req.queryParams } });
+
+        if (req.url.endsWith('/GenerateFreeFormStreamed')) {
+          const payload = this.payloadFromRequest(req);
+          const notebookId = String(payload[7]);
+          await new Promise<void>((resolve) => {
+            this.waiters.set(notebookId, resolve);
+          });
+          const reply = this.chatReplies.get(notebookId);
+          if (!reply) throw new Error(`no chat reply for ${notebookId}`);
+          return this.buildChatResponse(reply.text, reply.threadId);
+        }
+
+        if (req.url.endsWith('/batchexecute')) {
+          const rpcid = req.queryParams['rpcids'];
+          if (rpcid !== 'hPTbtc') throw new Error(`unexpected rpcid ${rpcid}`);
+          const fReq = req.body['f.req'];
+          if (!fReq) throw new Error('no f.req in list threads body');
+          const outer = JSON.parse(fReq) as [[[string, string, null, string]]];
+          const payload = JSON.parse(outer[0][0][1]) as unknown[];
+          const notebookId = String(payload[2]);
+          return this.buildListThreadsResponse(this.listThreads.get(notebookId) ?? []);
+        }
+
+        throw new Error(`unexpected URL ${req.url}`);
+      }
+
+      releaseChat(notebookId: string): void {
+        const resolve = this.waiters.get(notebookId);
+        if (!resolve) throw new Error(`no pending chat for ${notebookId}`);
+        this.waiters.delete(notebookId);
+        resolve();
+      }
+
+      async waitForPendingChat(notebookId: string): Promise<void> {
+        for (let i = 0; i < 20; i++) {
+          if (this.waiters.has(notebookId)) return;
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        throw new Error(`chat did not start for ${notebookId}`);
+      }
+
+      chatPayloads(): unknown[][] {
+        return this.calls
+          .filter((c) => c.url.endsWith('/GenerateFreeFormStreamed'))
+          .map((c) => this.payloadFromBody(c.body));
+      }
+
+      private payloadFromRequest(req: TransportRequest): unknown[] {
+        return this.payloadFromBody(req.body);
+      }
+
+      private payloadFromBody(body: Record<string, string>): unknown[] {
+        const fReq = body['f.req'];
+        if (!fReq) throw new Error('no f.req in chat body');
+        const outer = JSON.parse(fReq) as [null, string];
+        return JSON.parse(outer[1]) as unknown[];
+      }
+
+      private buildChatResponse(text: string, threadId: string): string {
+        const inner = [text, null, [threadId, 'resp-id', 0]];
+        const env = [['wrb.fr', 'oid', JSON.stringify(inner), null]];
+        const json = JSON.stringify(env);
+        return `)]}'\n${json.length}\n${json}`;
+      }
+
+      private buildListThreadsResponse(threadIds: string[]): string {
+        const inner = [threadIds.map((id) => [id])];
+        const env = [['wrb.fr', 'hPTbtc', JSON.stringify(inner), null]];
+        const json = JSON.stringify(env);
+        return `)]}'\n${json.length}\n${json}`;
+      }
+    }
+
+    const mock = new DeferredMockTransport();
+    const c = makeClient(mock);
+
+    const chatA = c.sendChat(NOTEBOOK_A, 'Q1-A', ['src-1']);
+    const chatB = c.sendChat(NOTEBOOK_B, 'Q1-B', ['src-1']);
+
+    await Promise.all([
+      mock.waitForPendingChat(NOTEBOOK_A),
+      mock.waitForPendingChat(NOTEBOOK_B),
+    ]);
+    mock.releaseChat(NOTEBOOK_B);
+    mock.releaseChat(NOTEBOOK_A);
+    await Promise.all([chatA, chatB]);
+
+    const payloads = mock.chatPayloads();
+    const byNotebook = new Map(payloads.map((payload) => [payload[7], payload]));
+    expect(byNotebook.get(NOTEBOOK_A)?.[4]).toBe('thread-A');
+    expect(byNotebook.get(NOTEBOOK_B)?.[4]).toBe('thread-B');
+    expect(byNotebook.get(NOTEBOOK_A)?.[2]).toBeNull();
+    expect(byNotebook.get(NOTEBOOK_B)?.[2]).toBeNull();
+  });
+
   it('falls back to threadId=null when hPTbtc returns no threads', async () => {
     const mock = new MockTransport();
     mock.listChatThreadsResult = [];
